@@ -193,6 +193,48 @@ class AppForm(QMainWindow):
         self.rows.addRow(self.set_parameters_btn)
         return
 
+    def set_params(self):
+        try:
+            temp_follow = self.temp_follow_input.text()
+            if temp_follow != "a" and temp_follow != "f":
+                raise Exception('temp_follow', "not 'a' or 'f'")
+            self.temp_follow = temp_follow
+            t_param = float(self.t_param_input.text())
+            sample_curr = float(self.sample_curr_input.text())
+            dvm_range = float(self.dvm_range_input.text())
+            pt_interval =int(self.pt_interval_input.text())
+            num_delta_points = int(self.num_delta_points_input.text())
+            delta_delay = float(self.delta_delay_input.text())
+            self.t_param = t_param
+            self.sample_curr = sample_curr
+            self.dvm_range = dvm_range
+            self.pt_interval = pt_interval
+            self.num_delta_points = num_delta_points
+            self.delta_delay = delta_delay
+            success_message = \
+                "Parameters set to: \n" + \
+                "Temperature Follow: " + str(self.temp_follow) + "\n" + \
+                "TParam: " + str(self.t_param) + "\n" + \
+                "Sample Curr: " + str(self.sample_curr) + "\n" + \
+                "DVM Range: " + str(self.dvm_range) + "\n" + \
+                "PT Interval: " + str(self.pt_interval) + "\n" + \
+                "# Delta Points: " + str(self.num_delta_points) + "\n" + \
+                "Delta Delay: " + str(self.delta_delay) + "\n"
+            QMessageBox.about(self, "Success", success_message)
+
+        except Exception as inst:
+            QMessageBox.about(self, 'Error', str(inst.args))
+        return
+
+    def start_exp(self):
+        return
+
+    def stop_exp(self):
+        return
+
+    def save_data(self):
+        return
+
     def create_main(self):
         page = QWidget()
         self.create_btns()
@@ -208,19 +250,6 @@ class AppForm(QMainWindow):
         vbox.addWidget(self.save_btn)
         page.setLayout(vbox)
         return
-   
-    def set_params(self):
-        return
-
-    def start_exp(self):
-        return
-
-    def stop_exp(self):
-        return
-
-    def save_data(self):
-        return
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -228,16 +257,3 @@ if __name__ == "__main__":
     form.show()
     app.exec_()
 
-'''
-    tempFollow = "a"
-    tParam = 3
-    sampleCurr = 0.01
-    dvmRange = 1
-    ptInterval = 1
-    numDeltaPoints = 25
-    deltaDelay = 0.1
-    filename = "superconductivity_data.txt"
-    data = superconductivity_ul(tempFollow, tParam, sampleCurr, dvmRange, 
-            ptInterval, numDeltaPoints, deltaDelay)
-    write_data(filename, data) '''
- 
