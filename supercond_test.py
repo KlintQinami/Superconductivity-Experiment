@@ -107,7 +107,7 @@ def temp_follow_a(lakeshore, keithley, tParam, sampleCurr, ptInterval,
         numDeltaPoints, deltaDelay):
     '''Collect tParam number of data points'''
     data = []
-    for i in range(tParam):
+    for i in range(int(round(tParam))):
         newData = temp_follow_loop(lakeshore, keithley, sampleCurr, 
                 numDeltaPoints, deltaDelay)
         data.append(newData)
@@ -202,7 +202,7 @@ class AppForm(QMainWindow):
             t_param = float(self.t_param_input.text())
             sample_curr = float(self.sample_curr_input.text())
             dvm_range = float(self.dvm_range_input.text())
-            pt_interval =int(self.pt_interval_input.text())
+            pt_interval = int(self.pt_interval_input.text())
             num_delta_points = int(self.num_delta_points_input.text())
             delta_delay = float(self.delta_delay_input.text())
             self.t_param = t_param
@@ -226,13 +226,91 @@ class AppForm(QMainWindow):
             QMessageBox.about(self, 'Error', str(inst.args))
         return
 
+    def temp_follow_a(self, lakeshore, keithley, tParam, sampleCurr, ptInterval,
+            numDeltaPoints, deltaDelay):
+        '''Collect tParam number of data points'''
+        for i in range(int(round(tParam))):
+            newData = temp_follow_loop(lakeshore, keithley, sampleCurr, 
+                    numDeltaPoints, deltaDelay)
+            self.data.append(newData)
+            time.sleep(ptInterval)
+        return
+
+
+    def temp_follow_m(self, lakeshore, keithley, tempFollow, tParam, sampleCurr,
+            ptInterval, dvmRange, numDeltaPoints, deltaDelay):
+        if (tempFollow == "f"):
+            return self.temp_follow_f(lakeshore, keithley, tParam, sampleCurr, 
+                    ptInterval, numDeltaPoints, deltaDelay)
+        elif (tempFollow == "a"):
+            return self.temp_follow_a(lakeshore, keithley, tParam, sampleCurr, 
+                    ptInterval, numDeltaPoints, deltaDelay)
+        return
+
+    def start_graphing(self):
+        self.data3 = np.empty(100)
+        self.data4 = np.empty(100)
+        self.ptr3 = 0
+        self.data_prev_size = len(self.data)
+
+        def update():
+            '''Updates graph and maintains left-to-right live plotting'''
+            if (self.data_prev_size < len(self.data)):
+                self.data_prev_size = len(self.data)
+                print "updating: " + str(len(self.data))
+                print(self.data)
+                self.data3[self.ptr3] = np.random.random()
+                self.data4[self.ptr3] = np.random.random()
+                self.ptr3 += 1
+                if self.ptr3 >= self.data3.shape[0]:
+                    tmp = self.data3
+                    tms = self.data4
+                    self.data3 = np.empty(self.data3.shape[0] * 2)
+                    self.data3[:tmp.shape[0]] = tmp
+                    self.data4 = np.empty(self.data4.shape[0] * 2)
+                    self.data4[:tms.shape[0]] = tms
+                self.curve.setData(self.data3[:self.ptr3], self.data4[:self.ptr3])
+
+        self.update = update
+        self.timer = pg.QtCore.QTimer()
+        self.timer.timeout.connect(self.update)
+        self.timer.start(1000) # argument controls speed of plotting
+        return
+
     def start_exp(self):
+        self.lakeshore, self.keithley, self.voltmeter = get_devices() 
+        if (check_devices(self.lakeshore, self.keithley)):
+            QMessageBox.about('Error', "Instruments not found")
+            return
+        arm_keithley(self.keithley, self.dvm_range, self.sample_curr, 
+                self.delta_delay, self.num_delta_points)
+        self.data = []
+        self.start_graphing()
+        print "Got to after graphing"
+        self.temp_follow_m(self.lakeshore, self.keithley, self.temp_follow, 
+                self.t_param, self.sample_curr, self.dvm_range, 
+                self.pt_interval, self.num_delta_points, self.delta_delay)
         return
 
     def stop_exp(self):
+        disarm_keithley(self.keithley)
+        self.keithley.close()
+        self.lakeshore.close()
         return
 
     def save_data(self):
+        return
+
+    def set_plot(self):
+        self.plot.setTitle("Resistance vs Temperature")
+        self.plot.setLabel('left', 'Resistance', units='ohms')
+        self.plot.setLabel('bottom', 'Temperature', units='kelvin')
+        self.curve = self.plot.plot(pen='b')
+        self.plot.setDownsampling(mode='peak')
+        # self.plot.setClipToView(True)
+        # self.plot.enableAutoRange(x=True)
+        # self.plot.enableAutoRange(y=True)
+        pg.setConfigOptions(antialias=True)
         return
 
     def create_main(self):
@@ -241,6 +319,7 @@ class AppForm(QMainWindow):
         self.create_lines()
         self.setCentralWidget(page)
         self.plot = pg.PlotWidget()
+        self.set_plot()
         self.add_lines()
         vbox = QGridLayout()
         vbox.addLayout(self.rows, 0, 0, 1, 3)
