@@ -33,7 +33,6 @@ class AppForm(QMainWindow):
         self.start_btn = QPushButton("Start", self)
         self.stop_btn = QPushButton("Stop", self)
         self.set_parameters_btn = QPushButton("Set parameters", self)
-        self.save_btn.clicked.connect(self.save_data)
         self.start_btn.clicked.connect(self.start_exp)
         self.stop_btn.clicked.connect(self.stop_exp)
         self.set_parameters_btn.clicked.connect(self.set_params)
@@ -191,30 +190,21 @@ class AppForm(QMainWindow):
 
 
     def update_plot(self):
-        print self.data[-1]
-        self.x.append(10*np.random.random())
-        self.y.append(10*np.random.random())
-        self.curve.setData(self.x, self.x)
-        app.processEvents()
-        '''
-        self.data3 = np.empty(100)
-        self.data4 = np.empty(100)
-        self.ptr3 = 0
+        self.x[self.graph_index] = np.random.random()
+        self.y[self.graph_index] = np.random.random()
+        self.graph_index += 1
+        if self.graph_index >= self.x.shape[0]:
+            tmp = self.x
+            tms = self.y
+            self.x = np.empty(self.x.shape[0] * 2)
+            self.x[:tmp.shape[0]] = tmp
+            self.y = np.empty(self.y.shape[0] * 2)
+            self.y[:tms.shape[0]] = tms
+        self.curve.setData(self.x[:self.graph_index], 
+        self.y[:self.graph_index])
 
-        def update():
-            self.data3[self.ptr3] = np.random.random()
-            self.data4[self.ptr3] = np.random.random()
-            self.ptr3 += 1
-            if self.ptr3 >= self.data3.shape[0]:
-                tmp = self.data3
-                tms = self.data4
-                self.data3 = np.empty(self.data3.shape[0] * 2)
-                self.data3[:tmp.shape[0]] = tmp
-                self.data4 = np.empty(self.data4.shape[0] * 2)
-                self.data4[:tms.shape[0]] = tms
-            self.curve.setData(self.data3[:self.ptr3], 
-            self.data4[:self.ptr3])
-        '''
+        app.processEvents()
+        print self.data[-1]
         return
 
 
@@ -263,26 +253,33 @@ class AppForm(QMainWindow):
 
 
     def save_data(self):
-        outfile = QFileDialog.getSaveFileName(self, "Save File")
-        with open(outfile, "wb") as f:
-            writer = csv.writer(f, delimeter=',')
-            for line in self.data:
-                writer.writerow(line)
+        try:
+            outfile = QFileDialog.getSaveFileName(self, "Save File")
+            with open(outfile, "wb") as f:
+                f.write("new_tempu,new_templ,new_diode,sample_curr," + \
+                        "avg_voltage,avg_ohms\n")
+                writer = csv.writer(f, delimiter=',')
+                for line in self.data:
+                    writer.writerow(line)
+            return
+        except Exception:
+            QMessageBox.about(self, 'Error', 'Nothing was saved.')
         return
 
 
     def set_plot(self):
         self.plot.setTitle("Resistance vs Temperature")
-        self.plot.setLabel('left', 'Resistance', units='[ohms]')
-        self.plot.setLabel('bottom', 'Temperature', units='[kelvin]')
+        self.plot.setLabel('left', 'Resistance', units='ohms')
+        self.plot.setLabel('bottom', 'Temperature', units='kelvin')
         self.curve = self.plot.plot(pen='b')
         self.plot.setDownsampling(mode='peak')
         self.plot.setClipToView(True)
         self.plot.enableAutoRange(x=True)
         self.plot.enableAutoRange(y=True)
         pg.setConfigOptions(antialias=True)
-        self.x = []
-        self.y = []
+        self.x = np.empty(100)
+        self.y = np.empty(100)
+        self.graph_index = 0
         return
 
 
