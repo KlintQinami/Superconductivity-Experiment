@@ -1,159 +1,32 @@
 #!/usr/bin/env python
-import sys
+
+import csv
 import numpy as np
 import pyqtgraph as pg
-import visa
-import subprocess
 import pyqtgraph.exporters
+import subprocess
+import sys
+import threading
 import time
-import csv
+import visa
+
 
 from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt4.QtGui  import *
 
-def get_devices():
-    '''Try finding experiment devices and returning them'''
-    subprocess.check_call("gpib_config")
-    rm = visa.ResourceManager('@py')
-    instruments = rm.list_resources()
-    lakeshore = None
-    keithley = None
-    voltmeter = None
-    for inst in instruments[1:]:
-        dev = rm.open_resource(inst)
-        dev_name = dev.query('*IDN?')
-        if 'LSCI' in dev_name:
-            lakeshore = dev
-            print "Lakeshore ( " + dev_name[:-2] + " ) found"
-            continue
-        if '6220' in dev_name:
-            keithley = dev
-            print "Keithley 6220 ( " + dev_name[:-2] + " ) found"
-            continue
-        if '2182' in dev_name:
-            voltmeter = dev
-            print "Keithley 2182 ( " + dev_name[:-2] + " ) found"
-            continue
-    return lakeshore, keithley, voltmeter
-
-
-def check_devices(lakeshore, keithley):
-    if (not lakeshore or not keithley):
-        print "Error: Missing GPIB Device"
-        return -1
-    is2182aConnected = keithley.query('SOUR:DELT:NVPR?')
-    if int(is2182aConnected) != 1:
-        print "Keithley 2182 Voltmeter is not connected"
-        return -1
-    return 0
-
-
-def arm_keithley(keithley, dvmRange, sampleCurr, deltaDelay, numDeltaPoints):
-    keithley.write('SYST:COMM:SER:SEND "VOLT:RANGE ' + str(dvmRange) + '"')
-    keithley.write('*RST')
-    keithley.write('SOUR:DELT:HIGH ' + str(sampleCurr))
-    keithley.write('SOUR:DELT:DEL ' + str(deltaDelay))
-    keithley.write('SOUR:DELT:COUN ' + str(numDeltaPoints))
-    keithley.write('TRAC:CLE')
-    keithley.write('SOUR:DELT:ARM')
-    time.sleep(10)
-    print "Keithley 6220 is armed (locked and loaded)"
-    return
-
-
-def disarm_keithley(keithley):
-    keithley.write('SOUR:SWE:ABOR')
-    keithley.write('TRAC:CLE')
-    print "Keithley 6220 is disarmed"
-    return
-
-
-def temp_follow_loop(lakeshore, keithley, sampleCurr, numDeltaPoints, 
-        deltaDelay):
-    newTempl = float(lakeshore.query('KRDG?a'))
-    newDiode = float(lakeshore.query('SRDG?a'))
-    newTempu = float(lakeshore.query('KRDG?b'))
-    keithley.write('INIT:IMM')
-    time.sleep(numDeltaPoints * deltaDelay + 0.1)
-    keithley.write('TRAC:DATA?')
-    time.sleep(numDeltaPoints * deltaDelay + 0.1)
-    keithley.read()
-    keithley.write('CALC2:FORM MEAN')
-    keithley.write('CALC2:STAT ON')
-    keithley.write('CALC2:IMM')
-    keithley.write('CALC2:DATA?')
-    avgVoltage = float(keithley.read())
-    avgOhms = avgVoltage / sampleCurr
-    return [newTempu, newTempl, newDiode, sampleCurr, avgVoltage, avgOhms]
-
-
-def temp_follow_f(lakeshore, keithley, tParam, sampleCurr,
-        ptInterval, numDeltaPoints, deltaDelay):
-    '''Collect data until the temperature tParam is reached'''
-    newTempl = float(lakeshore.query('KRDG?a'))
-    tempSign = np.sign(newTempl - tParam)
-    newTempSign = tempSign
-    data = []
-    while tempSign == newTempSign:
-        newData = temp_follow_loop(lakeshore, keithley, sampleCurr, 
-                numDeltaPoints, deltaDelay)
-        data.append(newData)
-        time.sleep(ptInterval)
-        newTempSign = np.sign(newData[1] - tParam)
-    return data
-
-
-def temp_follow_a(lakeshore, keithley, tParam, sampleCurr, ptInterval, 
-        numDeltaPoints, deltaDelay):
-    '''Collect tParam number of data points'''
-    data = []
-    for i in range(int(round(tParam))):
-        newData = temp_follow_loop(lakeshore, keithley, sampleCurr, 
-                numDeltaPoints, deltaDelay)
-        data.append(newData)
-        time.sleep(ptInterval)
-    return data
-
-
-def temp_follow(lakeshore, keithley, tempFollow, tParam, sampleCurr, dvmRange, 
-        ptInterval, numDeltaPoints, deltaDelay):
-    if (tempFollow == "f"):
-        return temp_follow_f(lakeshore, keithley, tParam, sampleCurr, 
-                ptInterval, numDeltaPoints, deltaDelay)
-    elif (tempFollow == "a"):
-        return temp_follow_a(lakeshore, keithley, tParam, sampleCurr, 
-                ptInterval, numDeltaPoints, deltaDelay)
-    return
-
-
-def superconductivity_ul(tempFollow, tParam, sampleCurr, dvmRange, ptInterval,
-        numDeltaPoints, deltaDelay):
-    lakeshore, keithley, voltmeter = get_devices() 
-    if (check_devices(lakeshore, keithley)):
-        return -1
-    arm_keithley(keithley, dvmRange, sampleCurr, deltaDelay, numDeltaPoints)
-    data = temp_follow(lakeshore, keithley, tempFollow, tParam, sampleCurr, 
-            dvmRange, ptInterval, numDeltaPoints, deltaDelay)
-    disarm_keithley(keithley)
-    keithley.close()
-    lakeshore.close()
-    return data
-
-
-def write_data(filename, data):
-    with open(filename, "wb") as outfile:
-        writer = csv.writer(outfile, delimiter=',')
-        for line in data:
-            writer.writerow(line)
-    return
 
 class AppForm(QMainWindow):
+
+
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
+        self.data = []
         self.create_main()
         self.setGeometry(100, 100, 800, 800)
         self.setWindowTitle("Superconductivity Lab")
+        self.get_devices()
         return
+
 
     def create_btns(self):
         self.save_btn = QPushButton("Save data", self)
@@ -168,6 +41,7 @@ class AppForm(QMainWindow):
         self.save_btn.resize(self.save_btn.minimumSizeHint())
         return
 
+
     def create_lines(self):
         self.temp_follow_input = QLineEdit()
         self.t_param_input = QLineEdit()
@@ -177,6 +51,7 @@ class AppForm(QMainWindow):
         self.num_delta_points_input = QLineEdit()
         self.delta_delay_input = QLineEdit()
         return
+
 
     def add_lines(self):
         self.rows = QFormLayout()
@@ -192,6 +67,7 @@ class AppForm(QMainWindow):
         self.rows.addRow("Delta delay (eg. 0.1): ", self.delta_delay_input)
         self.rows.addRow(self.set_parameters_btn)
         return
+
 
     def set_params(self):
         try:
@@ -226,80 +102,165 @@ class AppForm(QMainWindow):
             QMessageBox.about(self, 'Error', str(inst.args))
         return
 
-    def temp_follow_a(self, lakeshore, keithley, tParam, sampleCurr, ptInterval,
-            numDeltaPoints, deltaDelay):
-        '''Collect tParam number of data points'''
-        for i in range(int(round(tParam))):
-            newData = temp_follow_loop(lakeshore, keithley, sampleCurr, 
-                    numDeltaPoints, deltaDelay)
-            self.data.append(newData)
-            time.sleep(ptInterval)
+
+    def check_devices(self):
+        if (not self.lakeshore or not self.keithley):
+            print "Error: Missing GPIB Device"
+            return -1
+        is2182aConnected = self.keithley.query('SOUR:DELT:NVPR?')
+        if int(is2182aConnected) != 1:
+            print "Keithley 2182 Voltmeter is not connected"
+            return -1
+        return 0
+
+
+    def get_devices(self):
+        '''Try finding experiment devices and returning them'''
+        subprocess.check_call("gpib_config")
+        rm = visa.ResourceManager('@py')
+        instruments = rm.list_resources()
+        self.lakeshore = None
+        self.keithley = None
+        self.voltmeter = None
+        for inst in instruments[1:]:
+            dev = rm.open_resource(inst)
+            dev_name = dev.query('*IDN?')
+            if 'LSCI' in dev_name:
+                self.lakeshore = dev
+                print "Lakeshore ( " + dev_name[:-2] + " ) found"
+                continue
+            if '6220' in dev_name:
+                self.keithley = dev
+                print "Keithley 6220 ( " + dev_name[:-2] + " ) found"
+                continue
+            if '2182' in dev_name:
+                self.voltmeter = dev
+                print "Keithley 2182 ( " + dev_name[:-2] + " ) found"
+                continue
+        return
+   
+
+    def temp_follow_loop(self):
+        new_templ = float(self.lakeshore.query('KRDG?a'))
+        new_diode = float(self.lakeshore.query('SRDG?a'))
+        new_tempu = float(self.lakeshore.query('KRDG?b'))
+        self.keithley.write('INIT:IMM')
+        time.sleep(self.num_delta_points * self.delta_delay + 0.1)
+        self.keithley.write('TRAC:DATA?')
+        time.sleep(self.num_delta_points * self.delta_delay + 0.1)
+        self.keithley.read()
+        self.keithley.write('CALC2:FORM MEAN')
+        self.keithley.write('CALC2:STAT ON')
+        self.keithley.write('CALC2:IMM')
+        self.keithley.write('CALC2:DATA?')
+        avg_voltage = float(self.keithley.read())
+        avg_ohms = abs(avg_voltage / self.sample_curr)
+        self.data.append([new_tempu, new_templ, new_diode, self.sample_curr, 
+            avg_voltage, avg_ohms])
+        self.update_plot()
+        time.sleep(self.pt_interval)
+        return
+
+        
+    def temp_follow_f(self):
+        new_templ = float(self.lakeshore.query('KRDG?a'))
+        temp_sign = np.sign(new_templ - self.t_param)
+        new_temp_sign = temp_sign
+        while temp_sign == new_temp_sign:
+            self.temp_follow_loop()
+            new_temp_sign = np.sign(new_data[1] - self.t_param)
+        return data
+
+
+    def temp_follow_a(self):
+        for i in range(int(round(self.t_param))):
+            self.temp_follow_loop()
         return
 
 
-    def temp_follow_m(self, lakeshore, keithley, tempFollow, tParam, sampleCurr,
-            ptInterval, dvmRange, numDeltaPoints, deltaDelay):
-        if (tempFollow == "f"):
-            return self.temp_follow_f(lakeshore, keithley, tParam, sampleCurr, 
-                    ptInterval, numDeltaPoints, deltaDelay)
-        elif (tempFollow == "a"):
-            return self.temp_follow_a(lakeshore, keithley, tParam, sampleCurr, 
-                    ptInterval, numDeltaPoints, deltaDelay)
+    def temp_follow_m(self):
+        if (self.temp_follow == "f"):
+            self.temp_follow_f()
+        elif (self.temp_follow == "a"):
+            self.temp_follow_a()
         return
 
-    def start_graphing(self):
+
+    def update_plot(self):
+        print self.data[-1]
+        self.x.append(10*np.random.random())
+        self.y.append(10*np.random.random())
+        self.curve.setData(self.x, self.x)
+        app.processEvents()
+
+        '''
         self.data3 = np.empty(100)
         self.data4 = np.empty(100)
         self.ptr3 = 0
-        self.data_prev_size = len(self.data)
 
         def update():
-            '''Updates graph and maintains left-to-right live plotting'''
-            if (self.data_prev_size < len(self.data)):
-                self.data_prev_size = len(self.data)
-                print "updating: " + str(len(self.data))
-                print(self.data)
-                self.data3[self.ptr3] = np.random.random()
-                self.data4[self.ptr3] = np.random.random()
-                self.ptr3 += 1
-                if self.ptr3 >= self.data3.shape[0]:
-                    tmp = self.data3
-                    tms = self.data4
-                    self.data3 = np.empty(self.data3.shape[0] * 2)
-                    self.data3[:tmp.shape[0]] = tmp
-                    self.data4 = np.empty(self.data4.shape[0] * 2)
-                    self.data4[:tms.shape[0]] = tms
-                self.curve.setData(self.data3[:self.ptr3], self.data4[:self.ptr3])
-
-        self.update = update
-        self.timer = pg.QtCore.QTimer()
-        self.timer.timeout.connect(self.update)
-        self.timer.start(1000) # argument controls speed of plotting
+            self.data3[self.ptr3] = np.random.random()
+            self.data4[self.ptr3] = np.random.random()
+            self.ptr3 += 1
+            if self.ptr3 >= self.data3.shape[0]:
+                tmp = self.data3
+                tms = self.data4
+                self.data3 = np.empty(self.data3.shape[0] * 2)
+                self.data3[:tmp.shape[0]] = tmp
+                self.data4 = np.empty(self.data4.shape[0] * 2)
+                self.data4[:tms.shape[0]] = tms
+            self.curve.setData(self.data3[:self.ptr3], 
+            self.data4[:self.ptr3])
+        '''
         return
+
+    def print_arming_success(self):
+        print "Keithley 6220 is armed (locked and loaded)"
+        return
+
+    def arm_keithley(self):
+        self.keithley.write('SYST:COMM:SER:SEND "VOLT:RANGE ' + \
+                str(self.dvm_range) + '"')
+        self.keithley.write('*RST')
+        self.keithley.write('SOUR:DELT:HIGH ' + str(self.sample_curr))
+        self.keithley.write('SOUR:DELT:DEL ' + str(self.delta_delay))
+        self.keithley.write('SOUR:DELT:COUN ' + str(self.num_delta_points))
+        self.keithley.write('TRAC:CLE')
+        self.keithley.write('SOUR:DELT:ARM')
+        return
+
+
+    def disarm_keithley(self):
+        if (self.keithley()):
+            self.keithley.write('SOUR:SWE:ABOR')
+            self.keithley.write('TRAC:CLE')
+            print "Keithley 6220 is disarmed"
+        return
+
 
     def start_exp(self):
-        self.lakeshore, self.keithley, self.voltmeter = get_devices() 
-        if (check_devices(self.lakeshore, self.keithley)):
-            QMessageBox.about('Error', "Instruments not found")
-            return
-        arm_keithley(self.keithley, self.dvm_range, self.sample_curr, 
-                self.delta_delay, self.num_delta_points)
-        self.data = []
-        self.start_graphing()
-        print "Got to after graphing"
-        self.temp_follow_m(self.lakeshore, self.keithley, self.temp_follow, 
-                self.t_param, self.sample_curr, self.dvm_range, 
-                self.pt_interval, self.num_delta_points, self.delta_delay)
+        if (not self.keithley or not self.lakeshore):
+            self.get_devices()
+            if (self.check_devices()):
+                QMessageBox.about('Error', "Instruments not found")
+                return
+        self.arm_keithley()
+        self.temp_follow_m()
         return
 
+
     def stop_exp(self):
-        disarm_keithley(self.keithley)
+        self.disarm_keithley()
         self.keithley.close()
         self.lakeshore.close()
+        self.keithley = None
+        self.lakeshore = None
         return
+
 
     def save_data(self):
         return
+
 
     def set_plot(self):
         self.plot.setTitle("Resistance vs Temperature")
@@ -311,7 +272,10 @@ class AppForm(QMainWindow):
         # self.plot.enableAutoRange(x=True)
         # self.plot.enableAutoRange(y=True)
         pg.setConfigOptions(antialias=True)
+        self.x = []
+        self.y = []
         return
+
 
     def create_main(self):
         page = QWidget()
@@ -329,6 +293,7 @@ class AppForm(QMainWindow):
         vbox.addWidget(self.save_btn)
         page.setLayout(vbox)
         return
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
