@@ -167,6 +167,8 @@ class AppForm(QMainWindow):
         temp_sign = np.sign(new_templ - self.t_param)
         new_temp_sign = temp_sign
         while temp_sign == new_temp_sign:
+            if self.stop:
+                return
             self.temp_follow_loop()
             new_temp_sign = np.sign(new_data[1] - self.t_param)
         return data
@@ -174,6 +176,8 @@ class AppForm(QMainWindow):
 
     def temp_follow_a(self):
         for i in range(int(round(self.t_param))):
+            if self.stop:
+                return
             self.temp_follow_loop()
         return
 
@@ -192,7 +196,6 @@ class AppForm(QMainWindow):
         self.y.append(10*np.random.random())
         self.curve.setData(self.x, self.x)
         app.processEvents()
-
         '''
         self.data3 = np.empty(100)
         self.data4 = np.empty(100)
@@ -214,9 +217,6 @@ class AppForm(QMainWindow):
         '''
         return
 
-    def print_arming_success(self):
-        print "Keithley 6220 is armed (locked and loaded)"
-        return
 
     def arm_keithley(self):
         self.keithley.write('SYST:COMM:SER:SEND "VOLT:RANGE ' + \
@@ -227,11 +227,13 @@ class AppForm(QMainWindow):
         self.keithley.write('SOUR:DELT:COUN ' + str(self.num_delta_points))
         self.keithley.write('TRAC:CLE')
         self.keithley.write('SOUR:DELT:ARM')
+        print "Keithley 6220 is armed (locked and loaded)"
+        time.sleep(10)
         return
 
 
     def disarm_keithley(self):
-        if (self.keithley()):
+        if (self.keithley):
             self.keithley.write('SOUR:SWE:ABOR')
             self.keithley.write('TRAC:CLE')
             print "Keithley 6220 is disarmed"
@@ -244,12 +246,14 @@ class AppForm(QMainWindow):
             if (self.check_devices()):
                 QMessageBox.about('Error', "Instruments not found")
                 return
+        self.stop = False
         self.arm_keithley()
         self.temp_follow_m()
         return
 
 
     def stop_exp(self):
+        self.stop = True
         self.disarm_keithley()
         self.keithley.close()
         self.lakeshore.close()
@@ -259,18 +263,23 @@ class AppForm(QMainWindow):
 
 
     def save_data(self):
+        outfile = QFileDialog.getSaveFileName(self, "Save File")
+        with open(outfile, "wb") as f:
+            writer = csv.writer(f, delimeter=',')
+            for line in self.data:
+                writer.writerow(line)
         return
 
 
     def set_plot(self):
         self.plot.setTitle("Resistance vs Temperature")
-        self.plot.setLabel('left', 'Resistance', units='ohms')
-        self.plot.setLabel('bottom', 'Temperature', units='kelvin')
+        self.plot.setLabel('left', 'Resistance', units='[ohms]')
+        self.plot.setLabel('bottom', 'Temperature', units='[kelvin]')
         self.curve = self.plot.plot(pen='b')
         self.plot.setDownsampling(mode='peak')
-        # self.plot.setClipToView(True)
-        # self.plot.enableAutoRange(x=True)
-        # self.plot.enableAutoRange(y=True)
+        self.plot.setClipToView(True)
+        self.plot.enableAutoRange(x=True)
+        self.plot.enableAutoRange(y=True)
         pg.setConfigOptions(antialias=True)
         self.x = []
         self.y = []
