@@ -27,7 +27,7 @@ class AppForm(QMainWindow):
         try:
             self.get_devices()
         except Exception:
-            print "Error getting devices"
+            QMessageBox.about(self, "Error", "Instruments not found")
         return
 
 
@@ -237,9 +237,14 @@ class AppForm(QMainWindow):
 
     def start_exp(self):
         if (not self.keithley or not self.lakeshore):
-            self.get_devices()
-            if (self.check_devices()):
-                QMessageBox.about('Error', "Instruments not found")
+            try:
+                self.get_devices()
+                if (self.check_devices()):
+                    QMessageBox.about(self, 'Error', "Instruments not found")
+                    return
+            except Exception:
+                print "Start error"
+                QMessageBox.about(self, 'Error', "Instruments not found")
                 return
         self.stop = False
         self.arm_keithley()
