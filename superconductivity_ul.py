@@ -1,184 +1,316 @@
 #!/usr/bin/env python
-import sys
+
+import csv
 import numpy as np
 import pyqtgraph as pg
-import visa
-import subprocess
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
 import pyqtgraph.exporters
+import subprocess
+import sys
+import threading
+import time
+import visa
+
+
+from PyQt4.QtCore import *
+from PyQt4.QtGui  import *
 
 
 class AppForm(QMainWindow):
+
+
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
-        self.createMain()
+        self.data = []
+        self.create_main()
         self.setGeometry(100, 100, 800, 800)
         self.setWindowTitle("Superconductivity Lab")
-
-    def createMain(self):
-        '''Create the main application window. Should display an input 
-        bar and 4 push buttons. An empy graph should also appear.'''
-        page = QWidget()
-        self.save = QPushButton("Save CSVs", self)
-        self.save.clicked.connect(self.saveCSV)
-        self.save.resize(self.save.minimumSizeHint())
-        self.button = QPushButton('Enter Drive Current', page)
-        self.button.resize(self.button.minimumSizeHint())
-        self.edit1 = QLineEdit()
-        self.edit1.setMaxLength(8)
-        self.start = QPushButton("Start", self)
-        self.start.clicked.connect(self.instValidator)
-        self.start.resize(self.start.minimumSizeHint())
-        self.stop = QPushButton("Stop", self)
-        self.stop.clicked.connect(self.stopGraphing)
-        vbox1 = QGridLayout()
-        vbox1.addWidget(self.edit1)
-        vbox1.addWidget(self.button)
-        vbox1.addWidget(self.save)
-        vbox1.addWidget(self.start)
-        vbox1.addWidget(self.stop)
-        page.setLayout(vbox1)
-        self.setCentralWidget(page)
-        self.p1 = pg.PlotWidget()
-        self.p1.setTitle("Resistance vs B-Field")
-        self.p1.setLabel('left', 'Resistance', units='ohms')
-        self.p1.setLabel('bottom', 'B-Field', units='tesla')
-        vbox1.addWidget(self.p1)
-        self.button.clicked.connect(self.inputValidator)
-        pg.setConfigOptions(antialias=True)
-        self.curve = self.p1.plot(pen='b')
-        self.p1.setDownsampling(mode='peak')
-        self.p1.setClipToView(True)
-        self.p1.enableAutoRange(x=True)
-        self.p1.enableAutoRange(y=True)
-        self.driveCurrent = 1.0
-
-    def inputValidator(self):
-        '''Validates that the drive current is an actual number'''
-        number = self.edit1.text()
         try:
-            self.driveCurrent = float(number)
-            message = "Drive Current set to " + str(number)
-            QMessageBox.about(self, 'Success', message)
+            self.get_devices()
         except Exception:
-            QMessageBox.about(self, 'Error', 'Input can only be a number')
-            pass
+            print "Error getting devices"
+        return
 
-    def saveCSV(self):
-        '''Saves data in CSV format and enables buttons'''
+
+    def create_btns(self):
+        self.save_btn = QPushButton("Save data", self)
+        self.start_btn = QPushButton("Start", self)
+        self.stop_btn = QPushButton("Stop", self)
+        self.set_parameters_btn = QPushButton("Set parameters", self)
+        self.start_btn.clicked.connect(self.start_exp)
+        self.stop_btn.clicked.connect(self.stop_exp)
+        self.set_parameters_btn.clicked.connect(self.set_params)
+        self.save_btn.clicked.connect(self.save_data)
+        self.save_btn.resize(self.save_btn.minimumSizeHint())
+        return
+
+
+    def create_lines(self):
+        self.temp_follow_input = QLineEdit()
+        self.t_param_input = QLineEdit()
+        self.sample_curr_input = QLineEdit()
+        self.dvm_range_input = QLineEdit()
+        self.pt_interval_input = QLineEdit()
+        self.num_delta_points_input = QLineEdit()
+        self.delta_delay_input = QLineEdit()
+        return
+
+
+    def add_lines(self):
+        self.rows = QFormLayout()
+        self.rows.addRow("Temperature follow (a or f): ", 
+                self.temp_follow_input)
+        self.rows.addRow("T param (eg. 1): ", self.t_param_input)
+        self.rows.addRow("Sample current [amps] (eg. 0.01): ", 
+                self.sample_curr_input)
+        self.rows.addRow("DVM range (eg. 1): ", self.dvm_range_input)
+        self.rows.addRow("PT interval (eg. 1): ", self.pt_interval_input)
+        self.rows.addRow("Number of delta points (eg. 10): ", 
+                self.num_delta_points_input)
+        self.rows.addRow("Delta delay (eg. 0.1): ", self.delta_delay_input)
+        self.rows.addRow(self.set_parameters_btn)
+        return
+
+
+    def set_params(self):
         try:
-            name = QFileDialog.getSaveFileName(self, "Save File")
-            exporter = pg.exporters.CSVExporter(self.p1.plotItem)
-            exporter.export(name)
-        except Exception:
-            QMessageBox.about(self, 'Error', 'Nothing was saved.')
-        finally:
-            self.start.setEnabled(True)
-            self.stop.setEnabled(True)
-            self.button.setEnabled(True)
-            self.edit1.setEnabled(True)
+            temp_follow = self.temp_follow_input.text()
+            if temp_follow != "a" and temp_follow != "f":
+                raise Exception('temp_follow', "not 'a' or 'f'")
+            self.temp_follow = temp_follow
+            t_param = float(self.t_param_input.text())
+            sample_curr = float(self.sample_curr_input.text())
+            dvm_range = float(self.dvm_range_input.text())
+            pt_interval = int(self.pt_interval_input.text())
+            num_delta_points = int(self.num_delta_points_input.text())
+            delta_delay = float(self.delta_delay_input.text())
+            self.t_param = t_param
+            self.sample_curr = sample_curr
+            self.dvm_range = dvm_range
+            self.pt_interval = pt_interval
+            self.num_delta_points = num_delta_points
+            self.delta_delay = delta_delay
+            success_message = \
+                "Parameters set to: \n" + \
+                "Temperature Follow: " + str(self.temp_follow) + "\n" + \
+                "TParam: " + str(self.t_param) + "\n" + \
+                "Sample Curr: " + str(self.sample_curr) + "\n" + \
+                "DVM Range: " + str(self.dvm_range) + "\n" + \
+                "PT Interval: " + str(self.pt_interval) + "\n" + \
+                "# Delta Points: " + str(self.num_delta_points) + "\n" + \
+                "Delta Delay: " + str(self.delta_delay) + "\n"
+            QMessageBox.about(self, "Success", success_message)
 
-    def getInsts(self):
-        '''Gets instruments using resource manager. It assumes that the
-        instruments are the 2rd and 3th instruments when resource manager
-        is called. If software is used on a different computer, the calls to 
-        instruments[1] and instruments[2] must be changed accordingly. 
-        Instruments[1] tries to connect to the device measuring current.
-        Instrument[2] tries to connect to the device measuring voltage.
-        Sample GPIB instrument name: GPIB::5::INSTR'''
+        except Exception as inst:
+            QMessageBox.about(self, 'Error', str(inst.args))
+        return
+
+
+    def check_devices(self):
+        if (not self.lakeshore or not self.keithley):
+            print "Error: Missing GPIB Device"
+            return -1
+        is2182aConnected = self.keithley.query('SOUR:DELT:NVPR?')
+        if int(is2182aConnected) != 1:
+            print "Keithley 2182 Voltmeter is not connected"
+            return -1
+        return 0
+
+
+    def get_devices(self):
+        '''Try finding experiment devices and returning them'''
         subprocess.check_call("gpib_config")
         rm = visa.ResourceManager('@py')
         instruments = rm.list_resources()
-        self.voltmeter1 = rm.open_resource(instruments[1])
-        self.voltmeter2 = rm.open_resource(instruments[2])
-        # self.voltmeter1.values_format.container = np.array
-        # self.voltmeter2.values_format.container = np.array
-        return self.voltmeter1, self.voltmeter2
+        self.lakeshore = None
+        self.keithley = None
+        self.voltmeter = None
+        for inst in instruments[1:]:
+            dev = rm.open_resource(inst)
+            dev_name = dev.query('*IDN?')
+            if 'LSCI' in dev_name:
+                self.lakeshore = dev
+                print "Lakeshore ( " + dev_name[:-2] + " ) found"
+                continue
+            if '6220' in dev_name:
+                self.keithley = dev
+                print "Keithley 6220 ( " + dev_name[:-2] + " ) found"
+                continue
+            if '2182' in dev_name:
+                self.voltmeter = dev
+                print "Keithley 2182 ( " + dev_name[:-2] + " ) found"
+                continue
+        return
+   
 
-    def getValuesX(self):
-        '''Measures current and multiplies by the manufacturer specified
-        conversion, currently set to 0.1149'''
-        x = self.voltmeter1.query_ascii_values('MEAS:CURR?')
-        x = x[0] * 0.1149
-        return x
+    def temp_follow_loop(self):
+        new_templ = float(self.lakeshore.query('KRDG?a'))
+        new_diode = float(self.lakeshore.query('SRDG?a'))
+        new_tempu = float(self.lakeshore.query('KRDG?b'))
+        self.keithley.write('INIT:IMM')
+        time.sleep(self.num_delta_points * self.delta_delay + 0.1)
+        self.keithley.write('TRAC:DATA?')
+        time.sleep(self.num_delta_points * self.delta_delay + 0.1)
+        self.keithley.read()
+        self.keithley.write('CALC2:FORM MEAN')
+        self.keithley.write('CALC2:STAT ON')
+        self.keithley.write('CALC2:IMM')
+        self.keithley.write('CALC2:DATA?')
+        avg_voltage = float(self.keithley.read())
+        avg_ohms = abs(avg_voltage / self.sample_curr)
+        self.data.append([new_tempu, new_templ, new_diode, self.sample_curr, 
+            avg_voltage, avg_ohms])
+        self.update_plot()
+        time.sleep(self.pt_interval)
+        return
 
-    def getValuesY(self):
-        '''Measures voltage and divides by user input for drive current'''
-        y = self.voltmeter2.query_ascii_values('CURV?')
-        y = y[0] / self.driveCurrent
-        return abs(y)
+        
+    def temp_follow_f(self):
+        new_templ = float(self.lakeshore.query('KRDG?a'))
+        temp_sign = np.sign(new_templ - self.t_param)
+        new_temp_sign = temp_sign
+        while temp_sign == new_temp_sign:
+            if self.stop:
+                return
+            self.temp_follow_loop()
+            new_temp_sign = np.sign(new_data[1] - self.t_param)
+        return data
 
-    def closeApp(self):
-        '''Exits application. Has not been integrated into application.'''
-        choice = QtGui.QMessageBox.question(
-           self, 'Exit', 'Quit?', QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
-        if choice == QtGui.QMessageBox.Yes:
-            sys.exit()
-        else:
-            pass
 
-    def dataSim(self):
-        '''Used to simulate data during testing of software.'''
-        x = random.uniform(1, 9)
-        y = random.uniform(1, 100)
-        return x, y
+    def temp_follow_a(self):
+        for i in range(int(round(self.t_param))):
+            if self.stop:
+                return
+            self.temp_follow_loop()
+        return
 
-    def instValidator(self):
-        '''Tries to start graphing using instruments. Throws an exception and
-        gives user a warning if machines are unresponsive.'''
+
+    def temp_follow_m(self):
+        if (self.temp_follow == "f"):
+            self.temp_follow_f()
+        elif (self.temp_follow == "a"):
+            self.temp_follow_a()
+        return
+
+
+    def update_plot(self):
+        self.x[self.graph_index] = np.random.random()
+        self.y[self.graph_index] = np.random.random()
+
+        # self.x[self.graph_index] = self.data[-1][0]
+        # self.y[self.graph_index] = self.data[-1][-1]
+        self.graph_index += 1
+        if self.graph_index >= self.x.shape[0]:
+            tmp = self.x
+            tms = self.y
+            self.x = np.empty(self.x.shape[0] * 2)
+            self.x[:tmp.shape[0]] = tmp
+            self.y = np.empty(self.y.shape[0] * 2)
+            self.y[:tms.shape[0]] = tms
+        self.curve.setData(self.x[:self.graph_index], 
+        self.y[:self.graph_index])
+
+        print self.data[-1]
+        app.processEvents()
+        return
+
+
+    def arm_keithley(self):
+        self.keithley.write('SYST:COMM:SER:SEND "VOLT:RANGE ' + \
+                str(self.dvm_range) + '"')
+        self.keithley.write('*RST')
+        self.keithley.write('SOUR:DELT:HIGH ' + str(self.sample_curr))
+        self.keithley.write('SOUR:DELT:DEL ' + str(self.delta_delay))
+        self.keithley.write('SOUR:DELT:COUN ' + str(self.num_delta_points))
+        self.keithley.write('TRAC:CLE')
+        self.keithley.write('SOUR:DELT:ARM')
+        print "Keithley 6220 is armed (locked and loaded)"
+        time.sleep(10)
+        return
+
+
+    def disarm_keithley(self):
+        if (self.keithley):
+            self.keithley.write('SOUR:SWE:ABOR')
+            self.keithley.write('TRAC:CLE')
+            print "Keithley 6220 is disarmed"
+        return
+
+
+    def start_exp(self):
+        if (not self.keithley or not self.lakeshore):
+            self.get_devices()
+            if (self.check_devices()):
+                QMessageBox.about('Error', "Instruments not found")
+                return
+        self.stop = False
+        self.arm_keithley()
+        self.temp_follow_m()
+        return
+
+
+    def stop_exp(self):
+        self.stop = True
+        self.disarm_keithley()
+        self.keithley.close()
+        self.lakeshore.close()
+        self.keithley = None
+        self.lakeshore = None
+        return
+
+
+    def save_data(self):
         try:
-            self.getInsts()
-            self.startGraphing()
+            outfile = QFileDialog.getSaveFileName(self, "Save File")
+            with open(outfile, "wb") as f:
+                f.write("new_tempu,new_templ,new_diode,sample_curr," + \
+                        "avg_voltage,avg_ohms\n")
+                writer = csv.writer(f, delimiter=',')
+                for line in self.data:
+                    writer.writerow(line)
+            return
         except Exception:
-            QMessageBox.about(self, 'Error', 
-                'Instruments are either off or unresponsive. \
-                 \n\nTurn on instruments. \
-                 \n\nIf error persists, check GPIB ports.')
-            pass
+            QMessageBox.about(self, 'Error', 'Nothing was saved.')
+        return
 
-    def startGraphing(self):
-        self.data3 = np.empty(100)
-        self.data4 = np.empty(100)
-        self.ptr3 = 0
 
-        def update():
-            '''Updates graph and maintains left-to-right live plotting'''
-            self.data3[self.ptr3] = self.getValuesX()
-            self.data4[self.ptr3] = self.getValuesY()
-            self.ptr3 += 1
-            if self.ptr3 >= self.data3.shape[0]:
-                tmp = self.data3
-                tms = self.data4
-                self.data3 = np.empty(self.data3.shape[0] * 2)
-                self.data3[:tmp.shape[0]] = tmp
-                self.data4 = np.empty(self.data4.shape[0] * 2)
-                self.data4[:tms.shape[0]] = tms
-            # curve3.setData(data3[:self.ptr3])
-            # curve3.setPos(-self.ptr3, 0)
-            self.curve.setData(self.data3[:self.ptr3], self.data4[:self.ptr3])
-        self.update = update
-        self.timer = pg.QtCore.QTimer()
-        self.timer.timeout.connect(self.update)
-        self.timer.start(70) # argument controls speed of plotting
+    def set_plot(self):
+        self.plot.setTitle("Resistance vs Temperature")
+        self.plot.setLabel('left', 'Resistance', units='ohms')
+        self.plot.setLabel('bottom', 'Temperature', units='kelvin')
+        self.curve = self.plot.plot(pen=None, symbol='o', symbolPen=None, 
+                symbolSize=10, symbolBrush=(255,255,255,255))
+        self.plot.setDownsampling(mode='peak')
+        self.plot.setClipToView(True)
+        self.plot.enableAutoRange(x=True)
+        self.plot.enableAutoRange(y=True)
+        pg.setConfigOptions(antialias=True)
+        self.x = np.empty(100)
+        self.y = np.empty(100)
+        self.graph_index = 0
+        return
 
-    def stopGraphing(self):
-        '''Stops collecting data and locks user out of all buttons except
-        the save button. Buttons are reenabled once user saves data run.'''
-        choice = QMessageBox.question(self, 'End', 'Stop?',
-                                      QMessageBox.Yes | QMessageBox.No)
-        if choice == QMessageBox.Yes:
-            self.timer = pg.QtCore.QTimer()
-            self.timer.stop()
-            self.start.setEnabled(False)
-            self.stop.setEnabled(False)
-            self.button.setEnabled(False)
-            self.edit1.setEnabled(False)
-        else:
-            pass
+
+    def create_main(self):
+        page = QWidget()
+        self.create_btns()
+        self.create_lines()
+        self.setCentralWidget(page)
+        self.plot = pg.PlotWidget()
+        self.set_plot()
+        self.add_lines()
+        vbox = QGridLayout()
+        vbox.addLayout(self.rows, 0, 0, 1, 3)
+        vbox.addWidget(self.plot)
+        vbox.addWidget(self.start_btn)
+        vbox.addWidget(self.stop_btn)
+        vbox.addWidget(self.save_btn)
+        page.setLayout(vbox)
+        return
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     form = AppForm()
     form.show()
     app.exec_()
+
