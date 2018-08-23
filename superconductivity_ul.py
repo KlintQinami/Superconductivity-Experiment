@@ -157,7 +157,7 @@ class AppForm(QMainWindow):
         self.keithley.write('CALC2:DATA?')
         avg_voltage = float(self.keithley.read())
         avg_ohms = abs(avg_voltage / self.sample_curr)
-        self.data.append([new_tempu, new_templ, new_diode, self.sample_curr, 
+        self.data.append([new_templ, new_tempu, new_diode, self.sample_curr, 
             avg_voltage, avg_ohms])
         self.update_plot()
         time.sleep(self.pt_interval)
@@ -172,8 +172,9 @@ class AppForm(QMainWindow):
             if self.stop:
                 return
             self.temp_follow_loop()
-            new_temp_sign = np.sign(new_data[1] - self.t_param)
-        return data
+            new_temp_sign = np.sign(self.data[-1][1] - self.t_param)
+        print "Temperature " + str(self.t_param) + " reached"
+        return
 
 
     def temp_follow_a(self):
@@ -181,6 +182,7 @@ class AppForm(QMainWindow):
             if self.stop:
                 return
             self.temp_follow_loop()
+        print "Collected " + str(int(round(self.t_param))) + " datapoints"
         return
 
 
@@ -193,11 +195,8 @@ class AppForm(QMainWindow):
 
 
     def update_plot(self):
-        self.x[self.graph_index] = np.random.random()
-        self.y[self.graph_index] = np.random.random()
-
-        # self.x[self.graph_index] = self.data[-1][0]
-        # self.y[self.graph_index] = self.data[-1][-1]
+        self.x[self.graph_index] = self.data[-1][1]
+        self.y[self.graph_index] = self.data[-1][-1]
         self.graph_index += 1
         if self.graph_index >= self.x.shape[0]:
             tmp = self.x
@@ -249,12 +248,13 @@ class AppForm(QMainWindow):
 
 
     def stop_exp(self):
-        self.stop = True
-        self.disarm_keithley()
-        self.keithley.close()
-        self.lakeshore.close()
-        self.keithley = None
-        self.lakeshore = None
+        if (self.keithley and self.lakeshore):
+            self.stop = True
+            self.disarm_keithley()
+            self.keithley.close()
+            self.lakeshore.close()
+            self.keithley = None
+            self.lakeshore = None
         return
 
 
@@ -277,8 +277,8 @@ class AppForm(QMainWindow):
         self.plot.setTitle("Resistance vs Temperature")
         self.plot.setLabel('left', 'Resistance', units='ohms')
         self.plot.setLabel('bottom', 'Temperature', units='kelvin')
-        self.curve = self.plot.plot(pen=None, symbol='o', symbolPen=None, 
-                symbolSize=10, symbolBrush=(255,255,255,255))
+        self.curve = self.plot.plot(pen="b", symbol='o', symbolPen=None, 
+                symbolSize=5, symbolBrush=(255,255,255,255))
         self.plot.setDownsampling(mode='peak')
         self.plot.setClipToView(True)
         self.plot.enableAutoRange(x=True)
