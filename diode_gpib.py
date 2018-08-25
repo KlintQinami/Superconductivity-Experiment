@@ -154,16 +154,16 @@ class AppForm(QMainWindow):
 
 
     def initialize_keithleys(self):
-        self.keithley.write('SYST:COMM:SER:SEND "VOLT:RANGE ' + \
-                str(self.dvm_range) + '"')
+        compliance = 105
         self.keithley.write('*RST')
-        self.keithley.write('SOUR:DELT:HIGH ' + str(self.sample_curr))
-        self.keithley.write('SOUR:DELT:DEL ' + str(self.delta_delay))
-        self.keithley.write('SOUR:DELT:COUN ' + str(self.num_delta_points))
-        self.keithley.write('TRAC:CLE')
-        self.keithley.write('SOUR:DELT:ARM')
-        print "Keithley 6220 is armed (locked and loaded)"
-        time.sleep(10)
+        self.keithley.write('SOUR:CURR:COMP ' + str(self.compliance))
+        self.keithley.write('SOUR:CURR:RANG:AUTO ON')
+
+        self.voltmeter.write('*RST')
+        self.voltmeter.write('*CLS')
+        self.voltmeter.write('SAMP:COUN 1')
+        self.voltmeter.write('READ?')
+        print "Test Volts: " + str(self.voltmeter.read())
         return
 
 
