@@ -147,7 +147,10 @@ class AppForm(QMainWindow):
                 tu_sum += float(self.lakeshore.query('KRDG?b'))
                 time.sleep(0.1)
                 v_sum += float(self.voltmeter.query('READ?'))
-            self.data.append([v_sum/self.num_meas, curr_r, tl_sum, tu_sum])
+            self.data.append([v_sum/self.num_meas, 
+                curr_r, 
+                tl_sum/self.num_meas, tu_sum/self.num_meas, 
+                (tl_sum + tu_sum)/(2 * self.num_meas)])
             self.update_plot()
             curr_r += self.curr_inc
         return
@@ -185,8 +188,9 @@ class AppForm(QMainWindow):
                 return
         self.stop = False
         self.initialize_keithleys()
-        print "[voltage, current, templsum, tempusum]"
+        print "[voltage, current, templ, tempu, tempavg]"
         self.diode_measurement()
+        print "Data run completed"
         return
 
 
@@ -208,7 +212,7 @@ class AppForm(QMainWindow):
         try:
             outfile = QFileDialog.getSaveFileName(self, "Save File")
             with open(outfile, "wb") as f:
-                f.write("vav,curr_r,tl_sum,tu_sum\n")
+                f.write("voltage,current,templ,tempu,tempavg\n")
                 writer = csv.writer(f, delimiter=',')
                 for line in self.data:
                     writer.writerow(line)
@@ -219,8 +223,8 @@ class AppForm(QMainWindow):
 
 
     def set_plot(self):
-        self.plot.setTitle("Resistance vs Voltage")
-        self.plot.setLabel('left', 'Resistance', units='ohms')
+        self.plot.setTitle("Current vs Voltage")
+        self.plot.setLabel('left', 'Current', units='amps')
         self.plot.setLabel('bottom', 'Voltage', units='volts')
         self.curve = self.plot.plot(pen="b", symbol='o', symbolPen=None, 
                 symbolSize=5, symbolBrush=(255,255,255,255))
