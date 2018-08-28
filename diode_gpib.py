@@ -121,7 +121,7 @@ class AppForm(QMainWindow):
    
 
     def initialize_keithleys(self):
-        compliance = 105
+        self.compliance = 105
         self.keithley.write('*RST')
         self.keithley.write('SOUR:CURR:COMP ' + str(self.compliance))
         self.keithley.write('SOUR:CURR:RANG:AUTO ON')
@@ -185,6 +185,7 @@ class AppForm(QMainWindow):
                 return
         self.stop = False
         self.initialize_keithleys()
+        print "[voltage, current, templsum, tempusum]"
         self.diode_measurement()
         return
 
